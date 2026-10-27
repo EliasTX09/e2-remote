@@ -367,6 +367,8 @@ $("#ramSichern").onclick=()=>{
   const a=document.createElement("a"); a.href=u; a.download="ram.bin"; a.click(); URL.revokeObjectURL(u);
 };
 
+bedienteilBauen();   // Fl\u00e4che gleich zeigen; die Tasten sagen selbst Bescheid, wenn nichts verbunden ist
+
 if(!navigator.requestMIDIAccess)
   document.body.insertAdjacentHTML("afterbegin",
     '<div class="warn">Dieser Browser kann kein Web MIDI. Nimm Chrome oder Edge.</div>');
