@@ -145,6 +145,7 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
      <code>System/SYSTEM.VSB</code>. Mit dem Patch <code>updatename.py</code> steht der Name im
      Arbeitsspeicher und l&auml;sst sich hier setzen &mdash; dann darf die Datei hei&szlig;en, wie du willst.</p>
   <div class="row">
+    <button id="namePruefen">pr&uuml;fen</button>
     <button id="nameLesen">Namen lesen</button>
     <input type="text" id="nameFeld" value="/SYSTEM.VSB" size="24" maxlength="63">
     <button id="nameSetzen">setzen</button>
@@ -153,6 +154,16 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
   <p class="note">Der Name gilt <b>bis zum Neustart</b>. Ablauf: Datei per Kartenleser in
      <code>KORG/koalatribe/System/</code> legen, hier den Namen setzen, dann am Ger&auml;t
      MENU &rarr; DATA UTILITY &rarr; SOFTWARE UPDATE.</p>
+  <h3 style="margin-bottom:.3em">Rettung f&uuml;r die erste Fassung</h3>
+  <p class="note" style="margin-top:0">Die erste Fassung dieses Patches legte den Namen auf
+     <code>0xC01AE000</code>. Diese Stelle wird beim Einschalten &uuml;berschrieben, der Name war
+     also weg und SOFTWARE UPDATE meldete <b>keine Datei gefunden</b>. Wenn <q>pr&uuml;fen</q> oben
+     <b>kaputt</b> sagt: hier die drei Zeiger auf Korgs eigene Zeichenkette zur&uuml;cksetzen, dann
+     nimmt das Update wieder <code>System/SYSTEM.VSB</code> &mdash; damit kommt die neue Firmware drauf.</p>
+  <div class="row">
+    <button id="nameRettung">Korgs Original wiederherstellen</button>
+    <span class="chip" id="cRettung">&mdash;</span>
+  </div>
 </section>
 
 <section id="sRam" hidden>
@@ -369,10 +380,31 @@ $("#holePlatz").onclick=platzZeigen;
 $("#welche").onchange=platzZeigen;
 
 /* ---- 4 Update-Datei ---- */
+const LAGEN={
+  original:["Korgs Original","on","Diese Firmware hat updatename.py nicht - SOFTWARE UPDATE nimmt System/SYSTEM.VSB."],
+  gut     :["Patch in Ordnung","on","Der Name steht im Puffer bei 0xC00DBD00 und ueberlebt den Start."],
+  kaputt  :["kaputte erste Fassung","off","Die Zeiger stehen auf 0xC01AE000. Diese Stelle wird beim Start ueberschrieben, darum findet das Update keine Datei. Unten die Rettung druecken."],
+  unbekannt:["unbekannt","off","Die drei Zeiger stehen auf verschiedenen Werten."]
+};
+$("#namePruefen").onclick=()=>versuch(async()=>{
+  const st=await e2.updateStatus();
+  const [text,art,hinweis]=LAGEN[st.lage];
+  chip("#cName",text,art);
+  sagen(`${hinweis}  Zeiger: ${st.zeiger.map(z=>"0x"+z.toString(16).toUpperCase()).join(" ")}`);
+  if(st.name) $("#nameFeld").value=st.name;
+});
+$("#nameRettung").onclick=()=>versuch(async()=>{
+  const z=await e2.rescueUpdateName();
+  const ok=z.every(x=>x===0xC00A482C);
+  chip("#cRettung",ok?"wiederhergestellt":"nicht uebernommen",ok?"on":"off");
+  sagen(ok
+    ? "Die drei Zeiger stehen wieder auf Korgs Zeichenkette. Jetzt die neue Firmware als SYSTEM.VSB auf die Karte legen und am Geraet SOFTWARE UPDATE fahren."
+    : `Zeiger stehen auf ${z.map(x=>"0x"+x.toString(16)).join(" ")} - nicht uebernommen.`);
+});
 $("#nameLesen").onclick=()=>versuch(async()=>{
   const n=await e2.readUpdateName();
-  if(n===null){ chip("#cName","Patch fehlt in dieser Firmware","off");
-                sagen("0xC01AE000 ist leer - diese Firmware hat updatename.py nicht."); return; }
+  if(n===null){ chip("#cName","Patch fehlt oder Puffer leer","off");
+                sagen("0xC00DBD00 ist leer - erst 'pruefen' druecken."); return; }
   $("#nameFeld").value=n; chip("#cName","gelesen","on"); sagen(`Update-Datei: ${n}`);
 });
 $("#nameSetzen").onclick=()=>versuch(async()=>{

@@ -64,7 +64,11 @@ export const DISPLAY={addr:0xC031B310,size:1024,w:128,h:64};
 /* Name der Datei, die SOFTWARE UPDATE oeffnet. Nur mit dem Patch updatename.py:
    dann zeigen die drei Literal-Pools der Firmware hierher statt auf ihre feste
    Zeichenkette. Der Name gilt bis zum Neustart. */
-export const UPDATE_NAME={addr:0xC01AE000,size:0x40};
+export const UPDATE_NAME={addr:0xC00DBD00,size:0x40};
+/* Die drei Literal-Pools, die die Adresse des Update-Dateinamens laden. */
+export const UPDATE_POOLS=[0xC0030B40,0xC003AA64,0xC003AE8C];
+export const UPDATE_KORG=0xC00A482C;      // Korgs feste Zeichenkette "/SYSTEM.VSB"
+export const UPDATE_NAME_ALT=0xC01AE000;  // erster Pufferplatz, falsch: wird beim Start ueberschrieben
 /* Startbild in der Datei: 8 Seiten zu 128 Spalten, Bit 7 oben. */
 export const SPLASH={file:0xF9954,size:1024,w:128,h:64};
 
@@ -254,6 +258,32 @@ export class E2 {
   }
   async press(mailbox,index){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.KEY,index))); }
   async turn(mailbox,index,delta){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.ENCODER,index,delta))); }
+  /** Wohin die drei Literal-Pools zeigen. */
+  async readUpdatePools(){
+    const out=[];
+    for(const p of UPDATE_POOLS){
+      const b=await this.read(p,4);
+      out.push(new DataView(b.buffer,b.byteOffset,4).getUint32(0,true)>>>0);
+    }
+    return out;
+  }
+  /** Welche Fassung des Patches laeuft: original, gut, kaputt oder unbekannt. */
+  async updateStatus(){
+    const z=await this.readUpdatePools();
+    const alle=v=>z.every(x=>x===v);
+    if(alle(UPDATE_KORG))      return {lage:"original",zeiger:z,name:"/SYSTEM.VSB"};
+    if(alle(UPDATE_NAME.addr)) return {lage:"gut",zeiger:z,name:await this.readUpdateName()};
+    if(alle(UPDATE_NAME_ALT))  return {lage:"kaputt",zeiger:z,name:null};
+    return {lage:"unbekannt",zeiger:z,name:null};
+  }
+  /** Rettung: die drei Pools auf Korgs eigene Zeichenkette zuruecksetzen.
+      Danach verhaelt sich SOFTWARE UPDATE wie bei Korg und nimmt System/SYSTEM.VSB. */
+  async rescueUpdateName(){
+    const w=new Uint8Array(4);
+    new DataView(w.buffer).setUint32(0,UPDATE_KORG,true);
+    for(const p of UPDATE_POOLS) await this.write(p,w);
+    return this.readUpdatePools();
+  }
   /** Der Dateiname, den SOFTWARE UPDATE oeffnet, oder null ohne den Patch. */
   async readUpdateName(){
     const b=await this.read(UPDATE_NAME.addr,UPDATE_NAME.size);
