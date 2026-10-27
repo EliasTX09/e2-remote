@@ -64,6 +64,17 @@ export const DISPLAY={addr:0xC031B310,size:1024,w:128,h:64};
 /* Name der Datei, die SOFTWARE UPDATE oeffnet. Nur mit dem Patch updatename.py:
    dann zeigen die drei Literal-Pools der Firmware hierher statt auf ihre feste
    Zeichenkette. Der Name gilt bis zum Neustart. */
+/* ---- Pattern im Arbeitsspeicher ---------------------------------------
+   Das laufende Pattern liegt als Arbeitskopie im RAM (im Emulator gemessen,
+   tools/sonden/klemme.py). Aufbau: Kopf 0x800, dann 16 Parts zu 0x330, jeder
+   48 Byte Parameter und 64 Steps zu 12 Byte. Ein Step belegt acht davon:
+   on, gate, velocity, trigger, vier Notenbytes. Die Bytes +8 bis +11 sind frei
+   und halten mit dem Achttakte-Patch on, gate, velocity und trigger der
+   Takte 5 bis 8 - Step 64+N in den freien Bytes von Step N. */
+export const PATTERN={addr:0xC06B279C,size:0x4000,kopf:0x800,part:0x330,
+                      params:48,step:12,parts:16,steps:64,frei:8};
+export const LAENGE_OFF=0x25;            // Blockoffset des Laengenfelds, 0..7 = 1..8 Takte
+
 export const UPDATE_NAME={addr:0xC00DBD00,size:0x40};
 /* Die drei Literal-Pools, die die Adresse des Update-Dateinamens laden. */
 export const UPDATE_POOLS=[0xC0030B40,0xC003AA64,0xC003AE8C];
@@ -299,6 +310,42 @@ export class E2 {
     b.set(roh);
     await this.write(UPDATE_NAME.addr,b);
     return name;
+  }
+  /* ---- Pattern: Takte 5 bis 8 ---- */
+  /** Adresse des ersten Step-Bytes eines Parts. */
+  partAddr(part){
+    if(part<0||part>=PATTERN.parts) throw new Error(`Part 0 bis ${PATTERN.parts-1}`);
+    return PATTERN.addr+PATTERN.kopf+part*PATTERN.part+PATTERN.params;
+  }
+  /** Die 64 Steps eines Parts, je mit eigenen und freien Bytes. */
+  async readSteps(part){
+    const b=await this.readAll(this.partAddr(part),PATTERN.steps*PATTERN.step);
+    return Array.from({length:PATTERN.steps},(_,n)=>{
+      const o=n*PATTERN.step;
+      return {on:b[o],gate:b[o+1],velocity:b[o+2],trigger:b[o+3],
+              noten:Array.from(b.subarray(o+4,o+8)),
+              spaet:{on:b[o+8],gate:b[o+9],velocity:b[o+10],trigger:b[o+11]}};
+    });
+  }
+  /** Einen Schritt der Takte 5 bis 8 setzen (Step 0 bis 63 = Schritt 64 bis 127). */
+  async writeLateStep(part,step,{on=0,gate=0,velocity=0,trigger=0}={}){
+    if(step<0||step>=PATTERN.steps) throw new Error(`Step 0 bis ${PATTERN.steps-1}`);
+    const a=this.partAddr(part)+step*PATTERN.step+PATTERN.frei;
+    await this.write(a,new Uint8Array([on&0xff,gate&0xff,velocity&0xff,trigger&0xff]));
+  }
+  /** Alle Takte 5 bis 8 eines Parts loeschen. */
+  async clearLateBars(part){
+    for(let n=0;n<PATTERN.steps;n++) await this.writeLateStep(part,n,{});
+  }
+  /** Die Laenge des laufenden Patterns, 1 bis 8 Takte. */
+  async readLength(){
+    const b=await this.read(PATTERN.addr+LAENGE_OFF,1);
+    return b[0]+1;
+  }
+  async writeLength(takte){
+    if(takte<1||takte>8) throw new Error("1 bis 8 Takte");
+    await this.write(PATTERN.addr+LAENGE_OFF,new Uint8Array([takte-1]));
+    return takte;
   }
   async readDisplay(){ return this.readAll(DISPLAY.addr,DISPLAY.size); }
   async writeDisplay(bytes){

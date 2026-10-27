@@ -47,6 +47,10 @@ td input{width:100%}
 .balken i{display:block;height:100%;width:0;background:var(--akz);transition:width .15s}
 .zwei{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:700px){.zwei{grid-template-columns:1fr}}
+  .raster{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin:.8em 0;max-width:46em}
+  .raster button{padding:.45em .1em;font-size:.8em;border-radius:4px}
+  .raster button.an{background:#2f7d32;color:#fff;border-color:#2f7d32}
+  .raster .takt{grid-column:1/-1;font-size:.75em;opacity:.7;margin-top:.4em}
 </style>
 
 <h1>Electribe 2 &mdash; Fernsteuerung &uuml;ber USB</h1>
@@ -166,8 +170,40 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
   </div>
 </section>
 
+<section id="sTakte" hidden>
+  <h2>5 &middot; Takte 5 bis 8</h2>
+  <p class="note" style="margin-top:0">Mit dem Achttakte-Patch l&auml;sst sich die L&auml;nge auf
+     8 Takte stellen. Die Takte 5 bis 8 liegen in den vier Bytes, die jeder Schritt frei hat
+     (<code>+8</code> bis <code>+11</code>) &mdash; sie halten <code>on</code>, <code>gate</code>,
+     <code>velocity</code> und <code>trigger</code>. Die <b>Noten erben</b> die Takte 5 bis 8 von
+     den Takten 1 bis 4: f&uuml;r Schlagzeug ist das gleichg&uuml;ltig, bei melodischen Parts bleibt
+     die Tonh&ouml;he dieselbe. Am Ger&auml;t gibt es daf&uuml;r noch keine Anzeige, darum hier.</p>
+  <div class="row">
+    <label>Part
+      <select id="tPart"></select>
+    </label>
+    <button id="tLesen">lesen</button>
+    <span class="chip" id="cTakte">&mdash;</span>
+    <label style="margin-left:1em">L&auml;nge
+      <select id="tLaenge">
+        <option value="1">1 Takt</option><option value="2">2 Takte</option>
+        <option value="3">3 Takte</option><option value="4">4 Takte</option>
+        <option value="5">5 Takte</option><option value="6">6 Takte</option>
+        <option value="7">7 Takte</option><option value="8">8 Takte</option>
+      </select>
+    </label>
+    <button id="tLaengeSetzen">L&auml;nge setzen</button>
+    <button id="tLeeren">Takte 5-8 leeren</button>
+  </div>
+  <div id="tRaster" class="raster"></div>
+  <p class="note">Ein Klick schaltet den Schritt. Beim Einschalten werden Gate, Velocity und
+     Trigger vom gleichen Schritt der Takte 1 bis 4 &uuml;bernommen; ist der leer, vom ersten
+     belegten Schritt des Parts. Das Pattern liegt im Arbeitsspeicher &mdash; zum Behalten am
+     Ger&auml;t <b>WRITE</b> dr&uuml;cken.</p>
+</section>
+
 <section id="sRam" hidden>
-  <h2>5 &middot; Speicher</h2>
+  <h2>6 &middot; Speicher</h2>
   <div class="row">
     <input type="text" id="adr" value="0xC031B310" size="12">
     <input type="number" id="len" value="256" min="1" max="32768" style="width:90px">
@@ -183,7 +219,7 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
 </section>
 
 <script type="module">
-import {E2, BUTTONS, ENCODERS, DISPLAY, SPLASH, PTRS, REC, STAGE,
+import {E2, BUTTONS, ENCODERS, DISPLAY, SPLASH, PTRS, REC, STAGE, PATTERN,
         displayToPixels, splashToPixels, pixelsToSplash, pointersOf, recordOf,
         recName, setRecName, recDevice, recParam, setRecParam,
         hex, ramToFile, FILE_LIMIT} from "./e2.js";
@@ -228,10 +264,12 @@ $("#binfo").onclick=()=>versuch(async()=>{
   chip("#cBlech",`BLECH v${i.version}, Block ${i.maxBlock}`,"on");
   chip("#cKann",kann||"keine Angaben");
   $("#sFern").hidden=false; $("#sAbbild").hidden=false;
-  $("#sUpdate").hidden=false; $("#sRam").hidden=false;
+  $("#sUpdate").hidden=false;
+  $("#sTakte").hidden=false; $("#sRam").hidden=false;
   if(!i.kann.datei) sagen("Diese Firmware kann keine Kartendateien - Bereich 3 wird nicht gehen.");
   if(!i.kann.code)  sagen("Diese Firmware kann kein EXEC - die Fernsteuerung wird nicht gehen.");
   bedienteilBauen();
+  taktRasterBauen();
 });
 
 /* ---- 2 Fernsteuerung ---- */
@@ -413,7 +451,85 @@ $("#nameSetzen").onclick=()=>versuch(async()=>{
   sagen(`Update-Datei steht auf ${n} - gilt bis zum Neustart.`);
 });
 
-/* ---- 5 Speicher ---- */
+/* ---- 5 Takte 5 bis 8 ---- */
+let tSteps=null;
+function taktRasterBauen(){
+  const w=$("#tPart");
+  w.innerHTML="";
+  for(let i=0;i<PATTERN.parts;i++){
+    const o=document.createElement("option");
+    o.value=i; o.textContent=`Part ${i+1}`;
+    w.appendChild(o);
+  }
+  const r=$("#tRaster");
+  r.innerHTML="";
+  for(let takt=0;takt<4;takt++){
+    const kopf=document.createElement("div");
+    kopf.className="takt";
+    kopf.textContent=`Takt ${takt+5}`;
+    r.appendChild(kopf);
+    for(let i=0;i<16;i++){
+      const n=takt*16+i;
+      const b=document.createElement("button");
+      b.textContent=i+1;
+      b.id=`tS${n}`;
+      b.disabled=true;
+      b.onclick=()=>schrittSchalten(n);
+      r.appendChild(b);
+    }
+  }
+}
+function rasterZeigen(){
+  for(let n=0;n<PATTERN.steps;n++){
+    const b=$(`#tS${n}`);
+    b.disabled=!tSteps;
+    b.classList.toggle("an",!!(tSteps&&tSteps[n].spaet.on));
+  }
+}
+/** Werte, die ein neu eingeschalteter Schritt erbt. */
+function erben(n){
+  if(tSteps[n].on) return tSteps[n];
+  const belegt=tSteps.find(s=>s.on);
+  return belegt||{gate:1,velocity:0x64,trigger:0};
+}
+function schrittSchalten(n){
+  if(!tSteps) return;
+  versuch(async()=>{
+    const part=+$("#tPart").value;
+    const an=!!tSteps[n].spaet.on;
+    const neu=an?{on:0,gate:0,velocity:0,trigger:0}
+                :{on:1,gate:erben(n).gate,velocity:erben(n).velocity,trigger:erben(n).trigger};
+    await e2.writeLateStep(part,n,neu);
+    tSteps[n].spaet=neu;
+    rasterZeigen();
+    sagen(`Part ${part+1}, Schritt ${64+n} (Takt ${5+(n>>4)}, Platz ${1+(n&15)}) ${an?"aus":"an"}`);
+  });
+}
+$("#tLesen").onclick=()=>versuch(async()=>{
+  const part=+$("#tPart").value;
+  tSteps=await e2.readSteps(part);
+  const takte=await e2.readLength();
+  $("#tLaenge").value=takte;
+  rasterZeigen();
+  const eigen=tSteps.filter(s=>s.on).length, spaet=tSteps.filter(s=>s.spaet.on).length;
+  chip("#cTakte",`${takte} Takte, ${eigen} + ${spaet} Schritte`,"on");
+  sagen(`Part ${part+1}: Laenge ${takte} Takte, ${eigen} Schritte in den Takten 1-4, ${spaet} in 5-8.`);
+});
+$("#tPart").onchange=()=>{ tSteps=null; rasterZeigen(); chip("#cTakte","erst lesen"); };
+$("#tLaengeSetzen").onclick=()=>versuch(async()=>{
+  const takte=await e2.writeLength(+$("#tLaenge").value);
+  sagen(`Laenge auf ${takte} Takte gesetzt. Zum Behalten am Geraet WRITE druecken.`);
+  chip("#cTakte",`${takte} Takte gesetzt`,"on");
+});
+$("#tLeeren").onclick=()=>versuch(async()=>{
+  const part=+$("#tPart").value;
+  await e2.clearLateBars(part);
+  if(tSteps) tSteps.forEach(s=>s.spaet={on:0,gate:0,velocity:0,trigger:0});
+  rasterZeigen();
+  sagen(`Part ${part+1}: Takte 5 bis 8 geleert.`);
+});
+
+/* ---- 6 Speicher ---- */
 $("#ramLesen").onclick=()=>versuch(async()=>{
   const a=parseInt($("#adr").value,16)>>>0, n=+$("#len").value;
   const b=await e2.readAll(a,n);
@@ -429,7 +545,7 @@ $("#ramSichern").onclick=()=>{
   const a=document.createElement("a"); a.href=u; a.download="ram.bin"; a.click(); URL.revokeObjectURL(u);
 };
 
-bedienteilBauen();   // Flaeche gleich zeigen; die Tasten sagen selbst Bescheid, wenn nichts verbunden ist
+bedienteilBauen(); taktRasterBauen();   // Flaeche gleich zeigen; die Tasten sagen selbst Bescheid, wenn nichts verbunden ist
 
 if(!navigator.requestMIDIAccess)
   document.body.insertAdjacentHTML("afterbegin",
