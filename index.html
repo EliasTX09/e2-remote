@@ -139,8 +139,24 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
   </div>
 </section>
 
+<section id="sUpdate" hidden>
+  <h2>4 &middot; Welche Datei das Update nimmt</h2>
+  <p class="note" style="margin-top:0">Normalerweise &ouml;ffnet SOFTWARE UPDATE immer
+     <code>System/SYSTEM.VSB</code>. Mit dem Patch <code>updatename.py</code> steht der Name im
+     Arbeitsspeicher und l&auml;sst sich hier setzen &mdash; dann darf die Datei hei&szlig;en, wie du willst.</p>
+  <div class="row">
+    <button id="nameLesen">Namen lesen</button>
+    <input type="text" id="nameFeld" value="/SYSTEM.VSB" size="24" maxlength="63">
+    <button id="nameSetzen">setzen</button>
+    <span class="chip" id="cName">&mdash;</span>
+  </div>
+  <p class="note">Der Name gilt <b>bis zum Neustart</b>. Ablauf: Datei per Kartenleser in
+     <code>KORG/koalatribe/System/</code> legen, hier den Namen setzen, dann am Ger&auml;t
+     MENU &rarr; DATA UTILITY &rarr; SOFTWARE UPDATE.</p>
+</section>
+
 <section id="sRam" hidden>
-  <h2>4 &middot; Speicher</h2>
+  <h2>5 &middot; Speicher</h2>
   <div class="row">
     <input type="text" id="adr" value="0xC031B310" size="12">
     <input type="number" id="len" value="256" min="1" max="32768" style="width:90px">
@@ -200,7 +216,8 @@ $("#binfo").onclick=()=>versuch(async()=>{
   const kann=Object.entries(i.kann).filter(([,v])=>v).map(([k])=>k).join(", ");
   chip("#cBlech",`BLECH v${i.version}, Block ${i.maxBlock}`,"on");
   chip("#cKann",kann||"keine Angaben");
-  $("#sFern").hidden=false; $("#sAbbild").hidden=false; $("#sRam").hidden=false;
+  $("#sFern").hidden=false; $("#sAbbild").hidden=false;
+  $("#sUpdate").hidden=false; $("#sRam").hidden=false;
   if(!i.kann.datei) sagen("Diese Firmware kann keine Kartendateien - Bereich 3 wird nicht gehen.");
   if(!i.kann.code)  sagen("Diese Firmware kann kein EXEC - die Fernsteuerung wird nicht gehen.");
   bedienteilBauen();
@@ -351,7 +368,20 @@ function platzZeigen(){
 $("#holePlatz").onclick=platzZeigen;
 $("#welche").onchange=platzZeigen;
 
-/* ---- 4 Speicher ---- */
+/* ---- 4 Update-Datei ---- */
+$("#nameLesen").onclick=()=>versuch(async()=>{
+  const n=await e2.readUpdateName();
+  if(n===null){ chip("#cName","Patch fehlt in dieser Firmware","off");
+                sagen("0xC01AE000 ist leer - diese Firmware hat updatename.py nicht."); return; }
+  $("#nameFeld").value=n; chip("#cName","gelesen","on"); sagen(`Update-Datei: ${n}`);
+});
+$("#nameSetzen").onclick=()=>versuch(async()=>{
+  const n=await e2.writeUpdateName($("#nameFeld").value.trim());
+  chip("#cName","gesetzt","on");
+  sagen(`Update-Datei steht auf ${n} - gilt bis zum Neustart.`);
+});
+
+/* ---- 5 Speicher ---- */
 $("#ramLesen").onclick=()=>versuch(async()=>{
   const a=parseInt($("#adr").value,16)>>>0, n=+$("#len").value;
   const b=await e2.readAll(a,n);

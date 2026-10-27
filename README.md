@@ -25,6 +25,7 @@ Speicherkarte im Gerät schreiben.
 | Effekte | liest die Zeigertabellen und die Records, zeigt Name, Bausteine und Parameter, schreibt sie zurück |
 | Startbild | zeigt das Bild aus dem Abbild, ersetzt es durch ein eigenes, kehrt es um |
 | Karte | liest `SYSTEM.VSB` vom Gerät und schreibt sie zurück (`FILE READ` / `FILE BEGIN`) |
+| Update-Datei | setzt den Dateinamen, den SOFTWARE UPDATE öffnet — die Datei muss nicht `SYSTEM.VSB` heißen |
 | Speicher | beliebige Adresse lesen, Hex-Ansicht, als Datei sichern |
 
 ## Wie Änderungen dauerhaft werden
@@ -33,6 +34,9 @@ Zwei verschiedene Wege, und der Unterschied ist wichtig:
 
 **Tasten, Regler, Display** gehen in den Arbeitsspeicher. Ein Neustart stellt alles
 wieder her.
+
+**Der Update-Dateiname** steht im Arbeitsspeicher und gilt bis zum Neustart. Das reicht:
+Namen setzen, dann am Gerät SOFTWARE UPDATE.
 
 **Effekte und Startbild** ändert die Seite im Abbild und schreibt es als `SYSTEM.VSB`
 auf die Karte im Gerät. Dauerhaft wird es erst, wenn du danach am Gerät

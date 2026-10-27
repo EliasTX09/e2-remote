@@ -61,6 +61,10 @@ export const REMT={from:0xC018D000,to:0xC018FF00,sign:0x544D4552};
 export const REMOTE={MARK:0xA5000000, KEY:1, ENCODER:2, OS_WAIT:0xC0000B78, TRIES:50};
 /* Displaybild im RAM: 8 Seiten zu 128 Spalten, Bit 0 oben. */
 export const DISPLAY={addr:0xC031B310,size:1024,w:128,h:64};
+/* Name der Datei, die SOFTWARE UPDATE oeffnet. Nur mit dem Patch updatename.py:
+   dann zeigen die drei Literal-Pools der Firmware hierher statt auf ihre feste
+   Zeichenkette. Der Name gilt bis zum Neustart. */
+export const UPDATE_NAME={addr:0xC01AE000,size:0x40};
 /* Startbild in der Datei: 8 Seiten zu 128 Spalten, Bit 7 oben. */
 export const SPLASH={file:0xF9954,size:1024,w:128,h:64};
 
@@ -250,6 +254,22 @@ export class E2 {
   }
   async press(mailbox,index){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.KEY,index))); }
   async turn(mailbox,index,delta){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.ENCODER,index,delta))); }
+  /** Der Dateiname, den SOFTWARE UPDATE oeffnet, oder null ohne den Patch. */
+  async readUpdateName(){
+    const b=await this.read(UPDATE_NAME.addr,UPDATE_NAME.size);
+    if(b.every(x=>x===0xff)) return null;
+    const n=b.indexOf(0);
+    return new TextDecoder("latin1").decode(b.subarray(0,n<0?b.length:n));
+  }
+  async writeUpdateName(name){
+    if(!name.startsWith("/")) name="/"+name;
+    const roh=new TextEncoder().encode(name);
+    if(roh.length>=UPDATE_NAME.size) throw new Error(`Hoechstens ${UPDATE_NAME.size-1} Zeichen`);
+    const b=new Uint8Array(UPDATE_NAME.size);
+    b.set(roh);
+    await this.write(UPDATE_NAME.addr,b);
+    return name;
+  }
   async readDisplay(){ return this.readAll(DISPLAY.addr,DISPLAY.size); }
   async writeDisplay(bytes){
     if(bytes.length!==DISPLAY.size) throw new Error(`Ein Bild hat ${DISPLAY.size} Byte`);
