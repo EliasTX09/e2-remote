@@ -4,10 +4,25 @@ Hier liegt **keine Firmware**. Die Seite redet nur mit einem Gerät, das du selb
 gepatcht hast.
 
 **BLECH-SysEx-Protokoll** von KuhlerBuhler —
-https://github.com/KuhlerBuhler/kuhlers-gelumpe (AGPL-3.0). Die Befehle `0x60`
-bis `0x64`, der Statuscode, die 32-Bit-Wörter und die CRC-32 je Block sind in
-dessen `docs/messungen/2026-10-15-blech-sysex.md` beschrieben. `e2.js` ist eine
-eigene Umsetzung in JavaScript; kein Code übernommen.
+https://github.com/KuhlerBuhler/kuhlers-gelumpe (AGPL-3.0). Von dort stammen:
+die Funktionsbytes `0x60`–`0x67` und `0x6F` mit ihren Antworten, die Statuscodes,
+der Aufbau aus 32-Bit-Wörtern mit CRC-32 je Block (`src/protocol.mjs`), die Abläufe
+für Lesen und Schreiben der Kartendatei (`src/sender.mjs`, `src/usb-update.mjs`)
+und das Bit `0x80000000` für `ORIGINAL.BIN`.
+
+**Die Fernsteuerung** nutzt das Befehlswort und den Stub der BLECH-Laufzeit
+(`src/remote.mjs`, `tools/patch/script_remote.s`, Signatur `REMT`), den Stub-Puffer
+`0xC1000000` und die Cache-Routine `0xC00016A4` (`data/exec.mjs`) — ebenfalls
+KuhlerBuhler.
+
+**Die Bedienteil-Karte** (welche Nummer jede Taste und jeder Regler sendet) stammt
+aus dessen `data/panel.mjs`, im Emulator gemessen.
+
+**Die Adressen** des Displaybilds (`0xC031B310`, `data/map/screen.mjs`) und des
+Startbilds in der Datei (`0xF9954`, `data/map/firmware.mjs`) kommen aus seiner
+Gerätekarte.
+
+`e2.js` ist eine eigene Umsetzung in JavaScript; kein Code übernommen.
 
 **Korgs SysEx-Rahmen und die 8-in-7-Packung** sind in `scripts/e2_syx_codec.py`
 von Hacktribe (bangcorrupt, AGPL-3.0) dokumentiert:
@@ -16,6 +31,3 @@ https://github.com/bangcorrupt/hacktribe
 **Das Effekt-Preset-Format** (0x20C Byte, Steuerzeilen, Bausteine) stammt aus
 `ht_fx_preset_format.py` in hacktribe-editor, Branch `ht-cli` (bangcorrupt,
 AGPL-3.0): https://github.com/bangcorrupt/hacktribe-editor-legacy
-
-**Die Fernsteuerung** nutzt das Befehlswort der BLECH-Laufzeit
-(`tools/patch/script_remote.s`, Signatur `REMT`), ebenfalls KuhlerBuhler.

@@ -1,12 +1,24 @@
-/* Electribe 2 over Web MIDI - Protokollschicht.
+/* Electribe 2 ueber Web MIDI - Protokollschicht.
    Rahmen: F0 42 3n 00 01 24 <Funktion> <7-bit-gepackte Nutzdaten> F7
    Nutzdaten: 32-Bit-Woerter, Little Endian, Korgs 8-in-7-Packung.
-   Belege: hacktribe/scripts/e2_syx_codec.py, kuhlers-gelumpe docs/messungen/2026-10-15-blech-sysex.md */
-export const FN = { INFO:0x60, READ:0x61, WBEGIN:0x62, WDATA:0x63, FREAD:0x64, EXEC:0x6f };
-export const RE = { INFO:0x68, READ:0x69, WBEGIN:0x6a, WDATA:0x6b, FREAD:0x6c, EXEC:0x70 };
+   Belege: hacktribe/scripts/e2_syx_codec.py,
+           kuhlers-gelumpe src/protocol.mjs, src/sender.mjs, src/remote.mjs,
+           data/panel.mjs, data/exec.mjs, data/map/screen.mjs */
+
+export const FN = { INFO:0x60, READ:0x61, WBEGIN:0x62, WDATA:0x63,
+                    FLASHREAD:0x64, FILEREAD:0x65, FILEBEGIN:0x66, EXEC:0x6f };
+export const RE = { INFO:0x68, READ:0x69, WBEGIN:0x6a, WDATA:0x6b,
+                    FLASHREAD:0x6c, FILEREAD:0x6d, FILEBEGIN:0x6e, EXEC:0x70 };
 export const STATUS = ["in Ordnung","Pruefsumme stimmt nicht","verweigert",
-  "ausserhalb des erlaubten Bereichs","Flash-Funktion meldet keinen Erfolg","Rueckgelesenes weicht ab"];
+  "ausserhalb des erlaubten Bereichs","Flash-Funktion meldet keinen Erfolg",
+  "Rueckgelesenes weicht ab","Kartenfehler"];
+/* Was die Firmware laut INFO kann. */
+export const FLAG = { READ:0x01, WRITE:0x02, CRC:0x04, FLASH:0x08,
+                      FILE:0x10, PLUGIN:0x20, EXEC:0x40, SAMPLE:0x80 };
 export const MAX_BLOCK = 32768;
+/* Bit 31 eines FILE-Offsets: ORIGINAL.BIN neben SYSTEM.VSB. */
+export const FILE_OTHER = 0x80000000;
+export const FILE_LIMIT = 0x200100;
 
 /* Korgs 8-in-7: je 7 Nutzbytes ein Kopfbyte mit deren obersten Bits. */
 export function pack(bytes){
@@ -35,8 +47,45 @@ export const words=(...v)=>{const b=new Uint8Array(v.length*4);const d=new DataV
 export const readWords=(b,n)=>{const d=new DataView(b.buffer,b.byteOffset);return Array.from({length:n},(_,i)=>d.getUint32(i*4,true));};
 export const hex=b=>Array.from(b,x=>x.toString(16).padStart(2,"0")).join("");
 
+/* ---- Adressen ---------------------------------------------------------- */
+/* Abbild laedt auf 0xC0000000, die Datei hat 0x100 Byte Kopf davor. */
+export const BASE=0xC0000000, HDR=0x100;
+export const ramToFile = a => a - BASE + HDR;
+/* Stub-Puffer fuer EXEC und die Cache-Routine der Firmware (data/exec.mjs). */
+export const EXEC_AT=0xC1000000, EXEC_SIZE=0x400;
+export const ICACHE={addr:0xC00016A4,length:0x34};
+/* Die Bytes der Cache-Routine. In Korgs Original, Hacktribe und unserem Bau gleich. */
+export const ICACHE_BYTES="150f07ee0000a0e10000a0e10000a0e10000a0e10000a0e10000a0e10000a0e10000a0e1100f11ee010a80e3100f01ee0ef0a0e1";
+/* Fernsteuerung: die Laufzeit legt "REMT" und dahinter die Postfachadresse ab. */
+export const REMT={from:0xC018D000,to:0xC018FF00,sign:0x544D4552};
+export const REMOTE={MARK:0xA5000000, KEY:1, ENCODER:2, OS_WAIT:0xC0000B78, TRIES:50};
+/* Displaybild im RAM: 8 Seiten zu 128 Spalten, Bit 0 oben. */
+export const DISPLAY={addr:0xC031B310,size:1024,w:128,h:64};
+/* Startbild in der Datei: 8 Seiten zu 128 Spalten, Bit 7 oben. */
+export const SPLASH={file:0xF9954,size:1024,w:128,h:64};
+
+/* ---- Bedienteil (kuhlers-gelumpe data/panel.mjs, im Emulator gemessen) --- */
+export const BUTTONS=[
+  ["rec","REC",0x00],["stop","STOP",0x01],["play","PLAY",0x02],["tap","TAP",0x03],
+  ["gateArp","GATE ARP",0x04],["touchScale","TOUCH SCALE",0x05],["masterFx","MASTER FX",0x06],
+  ["mfxHold","MFX HOLD",0x07],["editLeft","◄ EDIT",0x08],["menu","MENU",0x09],
+  ["shift","SHIFT",0x0a],["partDec","◄ PART",0x0b],["editRight","EDIT ►",0x0c],
+  ["exit","EXIT",0x0d],["write","WRITE",0x0e],["partInc","PART ►",0x0f],
+  ["partMute","PART MUTE",0x10],["partErase","PART ERASE",0x11],["lpf","LPF",0x12],
+  ["trigger","TRIGGER",0x13],["hpf","HPF",0x14],["sequencer","SEQUENCER",0x15],
+  ["bpf","BPF",0x16],["keyboard","KEYBOARD",0x17],["chord","CHORD",0x18],
+  ["stepJump","STEP JUMP",0x19],["mfxSend","MFX SEND",0x1a],["patternSet","PATTERN SET",0x1b],
+  ["bar1","BAR 1",0x1c],["bar2","BAR 2",0x1d],["bar3","BAR 3",0x1e],["bar4","BAR 4",0x1f],
+  ["ampEg","AMP EG",0x20],["ifxOn","IFX ON",0x21],["touch","TOUCHPAD",0x22],
+].map(([id,label,index])=>({id,label,index}));
+export const ENCODERS=[
+  ["value","VALUE / PATTERN",0],["osc","SAMPLE / OSC",1],["cutoff","CUTOFF",2],
+  ["modType","MOD. TYPE",3],["ifxType","IFX TYPE",4],
+].map(([id,label,index])=>({id,label,index}));
+
 export class E2 {
-  constructor(){ this.inp=null; this.out=null; this.channel=0; this.id=0x24; this.pending=null; this.log=()=>{}; }
+  constructor(){ this.inp=null; this.out=null; this.channel=0; this.id=0x24;
+                 this.pending=null; this.log=()=>{}; this.maxBlock=MAX_BLOCK; this.flags=0; }
   async open(){
     const a=await navigator.requestMIDIAccess({sysex:true});
     this.access=a;
@@ -52,8 +101,7 @@ export class E2 {
     };
   }
   send(bytes){ this.log("-> "+hex(bytes).slice(0,80)); this.out.send(bytes); }
-  /** Wartet auf die naechste SysEx-Antwort. */
-  wait(ms=4000){
+  wait(ms=6000){
     return new Promise((res,rej)=>{
       const t=setTimeout(()=>{this.pending=null;rej(new Error("Zeit abgelaufen - antwortet das Geraet? BLECH-SysEx vorhanden?"))},ms);
       this.pending=d=>{clearTimeout(t);this.pending=null;res(d)};
@@ -71,71 +119,197 @@ export class E2 {
   frame(fn,payload=new Uint8Array(0)){
     return Uint8Array.from([0xF0,0x42,0x30|(this.channel&0xf),0x00,0x01,this.id,fn,...pack(payload),0xF7]);
   }
-  /** Eine BLECH-Anfrage, geprueft gegen das erwartete Antwortbyte. */
-  async cmd(fn,payload,expect){
+  async cmd(fn,payload,expect,ms){
     this.send(this.frame(fn,payload));
-    const r=await this.wait();
+    const r=await this.wait(ms);
     if(r[6]!==expect) throw new Error(`Antwort 0x${r[6].toString(16)} statt 0x${expect.toString(16)}`);
     return unpack(r.subarray(7,r.length-1));
   }
+  /** Prueft das Statuswort und gibt die Woerter zurueck. */
+  check(p,n,was){
+    const w=readWords(p,n);
+    if(w[0]!==0) throw new Error(`${was}: ${STATUS[w[0]]||w[0]}`);
+    return w;
+  }
   async info(){
     const p=await this.cmd(FN.INFO,new Uint8Array(0),RE.INFO);
-    const w=readWords(p,6);
-    return {status:w[0], version:w[1], flags:w[2], maxBlock:w[3], tableCrc:w[4], maxFlashBlock:w[5],
-            kann:{lesen:!!(w[2]&1),schreiben:!!(w[2]&2),crc:!!(w[2]&4),flash:!!(w[2]&8)}};
+    const w=readWords(p,5);
+    this.flags=w[2]; this.maxBlock=Math.min(w[3]||MAX_BLOCK,MAX_BLOCK);
+    return {status:w[0], version:w[1], flags:w[2], maxBlock:w[3], tableCrc:w[4],
+            kann:{lesen:!!(w[2]&FLAG.READ),schreiben:!!(w[2]&FLAG.WRITE),crc:!!(w[2]&FLAG.CRC),
+                  flash:!!(w[2]&FLAG.FLASH),datei:!!(w[2]&FLAG.FILE),plugin:!!(w[2]&FLAG.PLUGIN),
+                  code:!!(w[2]&FLAG.EXEC),sample:!!(w[2]&FLAG.SAMPLE)}};
   }
+
+  /* ---- RAM ---- */
   async read(addr,len){
-    if(len<1||len>MAX_BLOCK) throw new Error(`Laenge 1 bis ${MAX_BLOCK}`);
+    if(len<1||len>this.maxBlock) throw new Error(`Laenge 1 bis ${this.maxBlock}`);
     const p=await this.cmd(FN.READ,words(addr,len),RE.READ);
-    const w=readWords(p,4);
-    if(w[0]!==0) throw new Error("READ: "+(STATUS[w[0]]||w[0]));
+    const w=this.check(p,4,"READ");
     const data=p.subarray(16,16+w[2]);
     if(crc32(data)!==w[3]) throw new Error("READ: CRC der Antwort stimmt nicht");
     return data;
   }
-  /** Liest beliebig viel in Bloecken. */
   async readAll(addr,len,onProgress){
     const out=new Uint8Array(len);
-    for(let o=0;o<len;o+=MAX_BLOCK){
-      const n=Math.min(MAX_BLOCK,len-o);
+    for(let o=0;o<len;o+=this.maxBlock){
+      const n=Math.min(this.maxBlock,len-o);
       out.set(await this.read(addr+o,n),o);
       onProgress?.(o+n,len);
     }
     return out;
   }
   async write(addr,data){
-    if(data.length<1||data.length>MAX_BLOCK) throw new Error(`Laenge 1 bis ${MAX_BLOCK}`);
+    if(data.length<1||data.length>this.maxBlock) throw new Error(`Laenge 1 bis ${this.maxBlock}`);
     const c=crc32(data);
-    let p=await this.cmd(FN.WBEGIN,words(addr,data.length,c),RE.WBEGIN);
-    let w=readWords(p,3);
-    if(w[0]!==0) throw new Error("WRITE BEGIN: "+(STATUS[w[0]]||w[0]));
-    p=await this.cmd(FN.WDATA,data,RE.WDATA);
-    w=readWords(p,4);
-    if(w[0]!==0) throw new Error("WRITE DATA: "+(STATUS[w[0]]||w[0]));
+    this.check(await this.cmd(FN.WBEGIN,words(addr,data.length,c),RE.WBEGIN),3,"WRITE BEGIN");
+    const w=this.check(await this.cmd(FN.WDATA,data,RE.WDATA),4,"WRITE DATA");
     if(w[3]!==c) throw new Error("WRITE: das Geraet las andere Bytes zurueck");
     return w;
   }
   async writeAll(addr,data,onProgress){
-    for(let o=0;o<data.length;o+=MAX_BLOCK){
-      const n=Math.min(MAX_BLOCK,data.length-o);
+    for(let o=0;o<data.length;o+=this.maxBlock){
+      const n=Math.min(this.maxBlock,data.length-o);
       await this.write(addr+o,data.subarray(o,o+n));
       onProgress?.(o+n,data.length);
     }
   }
   async flashRead(addr,len){
-    const p=await this.cmd(FN.FREAD,words(addr,len),RE.FREAD);
-    const w=readWords(p,4);
-    if(w[0]!==0) throw new Error("FLASH READ: "+(STATUS[w[0]]||w[0]));
+    const p=await this.cmd(FN.FLASHREAD,words(addr,len),RE.FLASHREAD);
+    const w=this.check(p,4,"FLASH READ");
     return p.subarray(16,16+w[2]);
   }
+
+  /* ---- Datei auf der Karte (KORG/<ordner>/System/) ---------------------- */
+  /** Ein Stueck der Update-Datei; Laenge 0 fragt nur nach der Groesse. */
+  async fileRead(offset,len){
+    const p=await this.cmd(FN.FILEREAD,words(offset>>>0,len),RE.FILEREAD,20000);
+    const w=readWords(p,5);
+    if(w[0]!==0){ const e=new Error(`FILE READ: ${STATUS[w[0]]||w[0]}`); e.status=w[0]; throw e; }
+    const bytes=p.subarray(20,20+w[2]);
+    if(w[2]!==len) throw new Error(`FILE READ: ${w[2]} Byte statt ${len}`);
+    if(len && crc32(bytes)!==w[3]) throw new Error("FILE READ: CRC stimmt nicht");
+    return {offset:w[1], bytes, size:w[4]};
+  }
+  /** Groesse der Datei auf der Karte, 0 wenn keine da ist. */
+  async fileSize(other=false){
+    try{ return (await this.fileRead(other?FILE_OTHER:0,0)).size; }
+    catch(e){ if(e.status===6) return 0; throw e; }
+  }
+  async fileReadAll(size,onProgress,other=false){
+    const out=new Uint8Array(size);
+    for(let at=0;at<size;at+=this.maxBlock){
+      const n=Math.min(this.maxBlock,size-at);
+      const r=await this.fileRead(((other?FILE_OTHER:0)|at)>>>0,n);
+      out.set(r.bytes,at);
+      onProgress?.(at+n,size);
+    }
+    return out;
+  }
+  /** Schreibt die Datei neu; der erste Block legt sie an. Das Geraet liest jeden Block zurueck. */
+  async fileWrite(bytes,onProgress,other=false){
+    for(let at=0;at<bytes.length;at+=this.maxBlock){
+      const part=bytes.subarray(at,Math.min(at+this.maxBlock,bytes.length));
+      const c=crc32(part);
+      this.check(await this.cmd(FN.FILEBEGIN,words(((other?FILE_OTHER:0)|at)>>>0,part.length,c),RE.FILEBEGIN,20000),3,"FILE BEGIN");
+      const w=this.check(await this.cmd(FN.WDATA,part,RE.WDATA,20000),4,"FILE DATA");
+      if(w[3]!==c) throw new Error("FILE WRITE: das Geraet las andere Bytes von der Karte zurueck");
+      onProgress?.(at+part.length,bytes.length);
+    }
+  }
+
+  /* ---- Code ausfuehren -------------------------------------------------- */
+  /** Woerter in den Stub-Puffer, Cache leeren, ausfuehren, Originalbytes zurueck. */
+  async exec(wordList){
+    const code=new Uint8Array(wordList.length*4);
+    new DataView(code.buffer).setUint32(0,0,true);
+    wordList.forEach((v,i)=>new DataView(code.buffer).setUint32(i*4,v>>>0,true));
+    if(code.length>EXEC_SIZE) throw new Error(`Stub ist ${code.length} Byte, Puffer hat ${EXEC_SIZE}`);
+    // Die Cache-Routine der Firmware muss noch die erwarteten Bytes haben.
+    const have=await this.read(ICACHE.addr,ICACHE.length);
+    if(hex(have)!==ICACHE_BYTES) throw new Error("Die Cache-Routine der Firmware sieht anders aus - abgebrochen");
+    const backup=await this.read(EXEC_AT,code.length);
+    await this.write(EXEC_AT,code);
+    const back=await this.read(EXEC_AT,code.length);
+    if(hex(back)!==hex(code)) throw new Error("Stub kam anders zurueck - abgebrochen");
+    try{
+      this.check(await this.cmd(FN.EXEC,words(ICACHE.addr),RE.EXEC),2,"EXEC Cache");
+      this.check(await this.cmd(FN.EXEC,words(EXEC_AT),RE.EXEC),2,"EXEC Stub");
+    } finally {
+      await this.write(EXEC_AT,backup);
+    }
+  }
+  /** Sucht "REMT" im RAM der Laufzeit und gibt die Postfachadresse. */
+  async findMailbox(){
+    const len=REMT.to-REMT.from;
+    const b=await this.readAll(REMT.from,len);
+    const d=new DataView(b.buffer,b.byteOffset);
+    for(let at=0;at+8<=b.length;at+=4)
+      if(d.getUint32(at,true)===REMT.sign) return d.getUint32(at+4,true);
+    return null;
+  }
+  async press(mailbox,index){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.KEY,index))); }
+  async turn(mailbox,index,delta){ await this.exec(remoteStub(mailbox,remoteWord(REMOTE.ENCODER,index,delta))); }
+  async readDisplay(){ return this.readAll(DISPLAY.addr,DISPLAY.size); }
+  async writeDisplay(bytes){
+    if(bytes.length!==DISPLAY.size) throw new Error(`Ein Bild hat ${DISPLAY.size} Byte`);
+    await this.writeAll(DISPLAY.addr,bytes);
+  }
 }
+
+/* ---- Fernsteuerung ----------------------------------------------------- */
+/** Befehlswort: Taste (index) oder Regler `index` um `value` gedreht. */
+export function remoteWord(kind,index,value=0){
+  if(!Number.isInteger(index)||index<0||index>0xff) throw new RangeError("Index 0 bis 255");
+  if(!Number.isInteger(value)||value<-128||value>127) throw new RangeError("Drehen um -128 bis 127");
+  return (REMOTE.MARK|(value&0xff)<<16|index<<8|kind)>>>0;
+}
+/** Zaehler merken, Wort ablegen, bis zu 50 x 10 ms warten, bis die Laufzeit es abgearbeitet hat. */
+export function remoteStub(mailbox,word){
+  return [
+    0xe92d4070, 0xe59f4034, 0xe5945008, 0xe59f0030, 0xe5840000,
+    (0xe3a06000|REMOTE.TRIES)>>>0, 0xe3a0000a, 0xe59fc024, 0xe12fff3c,
+    0xe5940008, 0xe1500005, 0x1a000001, 0xe2566001, 0x1afffff7,
+    0xe3a00001, 0xe8bd8070,
+    mailbox>>>0, word>>>0, REMOTE.OS_WAIT,
+  ];
+}
+/** Postfachadresse aus einer geladenen SYSTEM.VSB. */
+export function mailboxOf(vsb){
+  const from=ramToFile(REMT.from), to=Math.min(ramToFile(REMT.to),vsb.length-8);
+  const d=new DataView(vsb.buffer,vsb.byteOffset,vsb.length);
+  for(let at=from;at<to;at+=4) if(d.getUint32(at,true)===REMT.sign) return d.getUint32(at+4,true);
+  return null;
+}
+
+/* ---- Bilder ------------------------------------------------------------ */
+/** Displaybytes (Bit 0 oben) -> 128x64 Pixel, 1 = hell. */
+export const displayToPixels=b=>{
+  const px=new Uint8Array(DISPLAY.w*DISPLAY.h);
+  for(let y=0;y<DISPLAY.h;y++) for(let x=0;x<DISPLAY.w;x++)
+    px[y*DISPLAY.w+x]=(b[(y>>3)*DISPLAY.w+x]>>(y&7))&1;
+  return px;
+};
+/** Startbildbytes (Bit 7 oben) -> Pixel, 1 = dunkel auf dem Geraet. */
+export const splashToPixels=b=>{
+  const px=new Uint8Array(SPLASH.w*SPLASH.h);
+  for(let y=0;y<SPLASH.h;y++) for(let x=0;x<SPLASH.w;x++)
+    px[y*SPLASH.w+x]=(b[(y>>3)*SPLASH.w+x]>>(7-(y&7)))&1;
+  return px;
+};
+export const pixelsToSplash=px=>{
+  const b=new Uint8Array(SPLASH.size);
+  for(let y=0;y<SPLASH.h;y++) for(let x=0;x<SPLASH.w;x++)
+    if(px[y*SPLASH.w+x]) b[(y>>3)*SPLASH.w+x]|=0x80>>(y&7);
+  return b;
+};
 
 /* ---- Effekt-Presets ---------------------------------------------------- */
 /* Record 0x20C Byte. Name 0x01 (16), Steuerzeilen ab 0x12 (10 x 0x1C),
    Bausteine 0x12A/0x174/0x1BE, Parameter ab Baustein+0x0B, Schrittweite 2. */
 export const REC=0x20c, NAME=0x01, CTRL=0x12, CTRL_SZ=0x1c;
 export const STAGE={ifx1:0x12a,ifx2:0x174,mfx:0x1be};
-/* Mit BLECHs preset-tables liegen die Zeigertabellen hier (128 Plaetze). */
+/* Mit preset-tables liegen die Zeigertabellen hier (128 Plaetze). */
 export const PTRS={ifx:0xC017C000,mfx:0xC017C200,count:128};
 export const recName=r=>new TextDecoder("latin1").decode(r.subarray(NAME,0x12)).split("\0")[0];
 export function setRecName(r,s){
@@ -152,4 +326,16 @@ export function recRows(r){
     if(s.some(x=>x)) out.push({row:i,source:s[0],chain:s[1],param:s[2],low:s[4],high:s[6]});
   }
   return out;
+}
+/** Die Zeiger einer Tabelle aus einer geladenen SYSTEM.VSB. */
+export function pointersOf(vsb,table,count=PTRS.count){
+  const d=new DataView(vsb.buffer,vsb.byteOffset,vsb.length);
+  const at=ramToFile(table);
+  return Array.from({length:count},(_,i)=>d.getUint32(at+4*i,true));
+}
+/** Ein Record aus einer geladenen SYSTEM.VSB, als Sicht auf dieselben Bytes. */
+export function recordOf(vsb,pointer){
+  const at=ramToFile(pointer);
+  if(at<0||at+REC>vsb.length) return null;
+  return vsb.subarray(at,at+REC);
 }
