@@ -1,0 +1,21 @@
+# Woher was kommt
+
+Hier liegt **keine Firmware**. Die Seite redet nur mit einem Gerät, das du selbst
+gepatcht hast.
+
+**BLECH-SysEx-Protokoll** von KuhlerBuhler —
+https://github.com/KuhlerBuhler/kuhlers-gelumpe (AGPL-3.0). Die Befehle `0x60`
+bis `0x64`, der Statuscode, die 32-Bit-Wörter und die CRC-32 je Block sind in
+dessen `docs/messungen/2026-10-15-blech-sysex.md` beschrieben. `e2.js` ist eine
+eigene Umsetzung in JavaScript; kein Code übernommen.
+
+**Korgs SysEx-Rahmen und die 8-in-7-Packung** sind in `scripts/e2_syx_codec.py`
+von Hacktribe (bangcorrupt, AGPL-3.0) dokumentiert:
+https://github.com/bangcorrupt/hacktribe
+
+**Das Effekt-Preset-Format** (0x20C Byte, Steuerzeilen, Bausteine) stammt aus
+`ht_fx_preset_format.py` in hacktribe-editor, Branch `ht-cli` (bangcorrupt,
+AGPL-3.0): https://github.com/bangcorrupt/hacktribe-editor-legacy
+
+**Die Fernsteuerung** nutzt das Befehlswort der BLECH-Laufzeit
+(`tools/patch/script_remote.s`, Signatur `REMT`), ebenfalls KuhlerBuhler.

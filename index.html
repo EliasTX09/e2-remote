@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E2 Fernsteuerung</title>
+<style>
+:root{color-scheme:light dark;--bg:#14161a;--fg:#e8e6e3;--mut:#9aa0a6;--acc:#2d6579;--ok:#3f9d5a;--err:#c0504d;--line:#2a2e35}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:16px 20px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:18px}
+.sub{color:var(--mut);font-size:13px;margin-top:4px}
+main{max-width:1000px;margin:0 auto;padding:20px}
+section{border:1px solid var(--line);border-radius:8px;margin-bottom:16px;overflow:hidden}
+section>h2{margin:0;padding:10px 14px;font-size:14px;background:#1b1e24;border-bottom:1px solid var(--line)}
+.body{padding:14px}
+button{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:#22262d;color:var(--fg);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--acc)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.p{background:var(--acc);border-color:var(--acc)}
+input,select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#1b1e24;color:var(--fg)}
+input[type=number]{width:11ch}
+label{color:var(--mut);margin-right:6px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+pre{margin:0;padding:10px;background:#0f1114;border:1px solid var(--line);border-radius:6px;overflow:auto;max-height:260px;font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--mut);font-weight:500}
+tr.sel{background:#1f2a30}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+.ok{color:var(--ok);border-color:var(--ok)}.err{color:var(--err);border-color:var(--err)}
+.warn{border-left:3px solid #b8860b;padding:10px 12px;background:#1d1a12;border-radius:4px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.grid button{text-align:left}
+#log{font-size:11px;max-height:150px}
+.hide{display:none}
+.pads{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:420px}
+</style>
+
+<header>
+  <h1>Electribe 2 — Fernsteuerung über USB</h1>
+  <div class="sub">Web MIDI mit SysEx. Braucht Chrome oder Edge und eine Firmware mit BLECH-SysEx.</div>
+</header>
+
+<main>
+<div class="warn">
+  <b>Lies das zuerst.</b> Diese Seite schreibt direkt in den Arbeitsspeicher deiner Electribe.
+  Sie schreibt <b>nicht</b> in den Flash — ein Neustart stellt immer alles wieder her.
+  Was du änderst, ist bis zum Ausschalten da; dauerhaft wird es erst, wenn du am Gerät speicherst.
+</div>
+
+<section>
+  <h2>1 · Verbinden</h2>
+  <div class="body">
+    <div class="row">
+      <button id="bOpen" class="p">MIDI freigeben</button>
+      <label for="sIn">Eingang</label><select id="sIn"></select>
+      <label for="sOut">Ausgang</label><select id="sOut"></select>
+      <button id="bUse" disabled>Benutzen</button>
+    </div>
+    <div class="row">
+      <button id="bSearch" disabled>Gerät suchen</button>
+      <button id="bInfo" disabled>BLECH-Info</button>
+      <span id="dev" class="pill">nicht verbunden</span>
+      <span id="blech" class="pill">BLECH unbekannt</span>
+    </div>
+    <pre id="status">Noch nichts.</pre>
+  </div>
+</section>
+
+<section id="secFx" class="hide">
+  <h2>2 · Effekt-Presets</h2>
+  <div class="body">
+    <div class="row">
+      <label for="sKind">Tabelle</label>
+      <select id="sKind"><option value="ifx">Insert (IFX)</option><option value="mfx">Master (MFX)</option></select>
+      <button id="bLoadFx" class="p">Vom Gerät lesen</button>
+      <span id="fxProg" class="pill">—</span>
+      <button id="bSaveFx" disabled>Als Datei sichern</button>
+    </div>
+    <div class="row">
+      <label for="fName">Name</label><input id="fName" maxlength="16" disabled>
+      <button id="bWriteName" disabled>Namen schreiben</button>
+      <span class="sub" id="selInfo"></span>
+    </div>
+    <div style="max-height:320px;overflow:auto"><table id="tFx"><thead>
+      <tr><th>Nr</th><th>Name</th><th>IFX&nbsp;1</th><th>IFX&nbsp;2</th><th>MFX</th><th>Zeilen</th></tr>
+    </thead><tbody></tbody></table></div>
+  </div>
+</section>
+
+<section id="secRemote" class="hide">
+  <h2>3 · Fernsteuerung</h2>
+  <div class="body">
+    <p class="sub">Braucht die BLECH-Laufzeit. Die Adresse des Befehlsworts steht in deiner Firmwaredatei —
+      zieh sie hier rein, dann sucht die Seite die Signatur <code>REMT</code>.</p>
+    <div class="row">
+      <input type="file" id="fVsb" accept=".VSB,.vsb">
+      <span id="mbox" class="pill">Briefkasten unbekannt</span>
+    </div>
+    <div class="row"><label>Taste</label>
+      <select id="sKey"></select>
+      <button id="bPress" disabled>Drücken</button>
+      <label style="margin-left:14px">Rad</label>
+      <button id="bTurnDn" disabled>−1</button><button id="bTurnUp" disabled>+1</button>
+    </div>
+  </div>
+</section>
+
+<section id="secRam" class="hide">
+  <h2>4 · Speicher lesen und schreiben</h2>
+  <div class="body">
+    <div class="row">
+      <label for="iAddr">Adresse</label><input id="iAddr" value="0xC017C000">
+      <label for="iLen">Länge</label><input id="iLen" type="number" value="256" min="1" max="32768">
+      <button id="bRead" class="p">Lesen</button>
+      <button id="bDump" disabled>Als Datei sichern</button>
+    </div>
+    <div class="row">
+      <input type="file" id="fWrite">
+      <button id="bWrite" disabled>Datei an die Adresse schreiben</button>
+    </div>
+    <pre id="hexview">—</pre>
+  </div>
+</section>
+
+<section id="secFw" class="hide">
+  <h2>5 · Firmware und Startbild</h2>
+  <div class="body">
+    <div class="warn" style="margin-bottom:10px">
+      <b>Firmware-Update über USB geht hier nicht.</b> BLECH hat dafür die SysEx-Befehle
+      <code>0x65</code>/<code>0x66</code>, deren Nutzdaten ich nicht nachgeprüft habe — und ein falsch
+      geschriebenes Update macht das Gerät unbrauchbar. Flashen darum weiter über die SD-Karte:
+      Datei nach <code>KORG/blechtribe/System/SYSTEM.VSB</code>, dann am Gerät
+      <code>Data Utility</code> → <code>SOFTWARE UPDATE</code>.
+    </div>
+    <p class="sub">Das Startbild liegt dagegen im Arbeitsspeicher und lässt sich live setzen:
+      1024 Byte, 128 × 64 Pixel, ein Bit je Pixel, seitenweise wie beim Display.</p>
+    <div class="row">
+      <label for="iSplash">Adresse</label><input id="iSplash" value="0xC01A2200">
+      <input type="file" id="fSplash" accept=".bin,.raw">
+      <button id="bSplash" disabled>Startbild schreiben</button>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Protokoll</h2>
+  <div class="body"><pre id="log"></pre></div>
+</section>
+</main>
+
+<script type="module">
+import {E2,FN,RE,STATUS,crc32,hex,words,readWords,REC,PTRS,recName,setRecName,recDevice,recRows} from "./e2.js";
+
+const $=s=>document.querySelector(s);
+const e2=new E2();
+let logLines=[];
+e2.log=m=>{logLines.push(m);if(logLines.length>120)logLines.shift();$("#log").textContent=logLines.join("\n");$("#log").scrollTop=1e6;};
+const say=(m,cls)=>{$("#status").textContent=m;$("#status").style.color=cls==="err"?"var(--err)":cls==="ok"?"var(--ok)":"";};
+const guard=fn=>async(...a)=>{try{await fn(...a)}catch(e){say("Fehler: "+e.message,"err");e2.log("!! "+e.message)}};
+
+/* --- 1 Verbinden --- */
+$("#bOpen").onclick=guard(async()=>{
+  if(!navigator.requestMIDIAccess) throw new Error("Dieser Browser kann kein Web MIDI. Nimm Chrome oder Edge.");
+  const {inputs,outputs}=await e2.open();
+  const fill=(sel,list)=>{sel.innerHTML="";list.forEach((p,i)=>{const o=document.createElement("option");o.value=i;o.textContent=p.name;sel.append(o)})};
+  fill($("#sIn"),inputs); fill($("#sOut"),outputs);
+  const guess=list=>list.findIndex(p=>/electribe|korg/i.test(p.name));
+  if(guess(inputs)>=0)$("#sIn").value=guess(inputs);
+  if(guess(outputs)>=0)$("#sOut").value=guess(outputs);
+  window._in=inputs; window._out=outputs;
+  $("#bUse").disabled=false;
+  say(`${inputs.length} Eingänge, ${outputs.length} Ausgänge gefunden. Ports wählen, dann "Benutzen".`);
+});
+$("#bUse").onclick=guard(async()=>{
+  e2.use(window._in[+$("#sIn").value], window._out[+$("#sOut").value]);
+  $("#bSearch").disabled=$("#bInfo").disabled=false;
+  say("Ports gesetzt. Jetzt \"Gerät suchen\".");
+});
+$("#bSearch").onclick=guard(async()=>{
+  const d=await e2.search();
+  $("#dev").textContent=`${d.modell} · Kanal ${d.channel+1} · v${d.version}`;
+  $("#dev").className="pill ok";
+  say(`Gefunden: ${d.modell}, Firmware ${d.version}.`,"ok");
+});
+$("#bInfo").onclick=guard(async()=>{
+  const i=await e2.info();
+  const k=i.kann;
+  $("#blech").textContent=`BLECH v${i.version} · Block ${i.maxBlock} B`;
+  $("#blech").className="pill ok";
+  say(`BLECH antwortet. Lesen ${k.lesen?"ja":"nein"}, Schreiben ${k.schreiben?"ja":"nein"}, `+
+      `CRC ${k.crc?"ja":"nein"}, Flash lesen ${k.flash?"ja":"nein"}. `+
+      `Schutztabelle CRC 0x${i.tableCrc.toString(16)}.`,"ok");
+  for(const s of ["#secFx","#secRemote","#secRam","#secFw"]) $(s).classList.remove("hide");
+  $("#bRead").disabled=false;
+});
+
+/* --- 2 Presets --- */
+let recs=[], sel=-1;
+const DEV_IFX={0:"—",1:"KP2 Comp",2:"SR1 Comp",3:"Cheap Comp",4:"Punch",5:"Limiter",6:"EQ 2",7:"EQ 4",
+  8:"Exciter",9:"Decimator",0xa:"Filter",0xf:"Distortion",0x10:"Acid Driver",0x11:"Chorus",0x12:"Flanger",
+  0x13:"Phaser",0x14:"Tremolo",0x15:"Level Mod",0x16:"Ring Mod",0x18:"Short Delay",0x27:"Mute"};
+const DEV_MFX={0:"—",0x27:"Mute",0x28:"KP2 Comp",0x29:"SR1 Comp",0x2a:"Limiter",0x2b:"EQ 4",0x2c:"Wah",
+  0x2d:"Multimode Filter",0x2e:"Distortion",0x2f:"Tube Pre",0x31:"Chorus",0x32:"Flanger",0x33:"Phaser",
+  0x34:"Tremolo",0x35:"Level Mod",0x36:"Hall",0x37:"Smooth Hall",0x38:"Wet Plate",0x39:"Dry Plate",
+  0x3a:"Room",0x3b:"Mod Delay",0x3c:"Tape Echo",0x3d:"Grain Shifter",0x3e:"Decimator",0x3f:"Looper",0x40:"Vinyl Break"};
+const dn=(map,v)=>map[v]??`0x${v.toString(16)}`;
+
+$("#bLoadFx").onclick=guard(async()=>{
+  const kind=$("#sKind").value;
+  $("#fxProg").textContent="Zeiger…";
+  const tbl=await e2.read(PTRS[kind], PTRS.count*4);
+  const ptrs=readWords(tbl,PTRS.count);
+  recs=[];
+  for(let i=0;i<PTRS.count;i++){
+    $("#fxProg").textContent=`${i+1}/${PTRS.count}`;
+    recs.push({i,addr:ptrs[i],data:await e2.read(ptrs[i],REC)});
+  }
+  $("#fxProg").textContent=`${recs.length} gelesen`;
+  $("#bSaveFx").disabled=false;
+  const tb=$("#tFx tbody"); tb.innerHTML="";
+  for(const r of recs){
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${r.i+1}</td><td>${recName(r.data)||"<i>leer</i>"}</td>`+
+      `<td>${dn(DEV_IFX,recDevice(r.data,"ifx1"))}</td>`+
+      `<td>${dn(DEV_IFX,recDevice(r.data,"ifx2"))}</td>`+
+      `<td>${dn(DEV_MFX,recDevice(r.data,"mfx"))}</td>`+
+      `<td>${recRows(r.data).length}</td>`;
+    tr.onclick=()=>{
+      sel=r.i;[...tb.children].forEach(x=>x.classList.remove("sel"));tr.classList.add("sel");
+      $("#fName").value=recName(r.data);$("#fName").disabled=false;$("#bWriteName").disabled=false;
+      $("#selInfo").textContent=`Platz ${r.i+1}, Record bei 0x${r.addr.toString(16)}`;
+    };
+    tb.append(tr);
+  }
+  say(`${recs.length} Presets gelesen (${$("#sKind").selectedOptions[0].textContent}).`,"ok");
+});
+$("#bWriteName").onclick=guard(async()=>{
+  const r=recs.find(x=>x.i===sel); if(!r) throw new Error("kein Platz gewählt");
+  const d=Uint8Array.from(r.data); setRecName(d,$("#fName").value);
+  await e2.write(r.addr+1, d.subarray(1,0x12));
+  r.data=d; say(`Name auf Platz ${r.i+1} geschrieben.`,"ok");
+});
+$("#bSaveFx").onclick=()=>{
+  const all=new Uint8Array(recs.length*REC);
+  recs.forEach((r,i)=>all.set(r.data,i*REC));
+  dl(all,`${$("#sKind").value}-presets.bin`);
+};
+
+/* --- 3 Fernsteuerung --- */
+const KEYS=["EXIT","MENU","WRITE","PLAY","REC","STOP","TAP","SHIFT","PART","EDIT","MASTER FX","SEQUENCER","KEYBOARD","CHORD","TRIGGER","PATTERN"];
+KEYS.forEach((k,i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${i} · ${k}`;$("#sKey").append(o)});
+let mailbox=null;
+const SIGN=0x544d4552;
+$("#fVsb").onchange=guard(async e=>{
+  const buf=new Uint8Array(await e.target.files[0].arrayBuffer());
+  const dv=new DataView(buf.buffer);
+  const from=0xC018D000-0xC0000000+0x100, to=Math.min(0xC018FF00-0xC0000000+0x100,buf.length-8);
+  mailbox=null;
+  for(let a=from;a<to;a+=4) if(dv.getUint32(a,true)===SIGN){mailbox=dv.getUint32(a+4,true);break}
+  if(mailbox){$("#mbox").textContent=`Briefkasten 0x${mailbox.toString(16)}`;$("#mbox").className="pill ok";
+    $("#bPress").disabled=$("#bTurnUp").disabled=$("#bTurnDn").disabled=false;
+    say("Signatur REMT gefunden.","ok");}
+  else {$("#mbox").textContent="keine REMT-Signatur";$("#mbox").className="pill err";
+    say("Diese Datei hat die BLECH-Laufzeit mit Tastenfernsteuerung nicht.","err");}
+});
+const MARK=0xa5000000;
+const cmdWord=(kind,index,value=0)=>(MARK|((value&0xff)<<16)|(index<<8)|kind)>>>0;
+const sendCmd=guard(async(kind,index,value)=>{
+  if(mailbox===null) throw new Error("Briefkasten unbekannt");
+  await e2.write(mailbox, words(cmdWord(kind,index,value)));
+  say(`Befehl gesendet: ${kind===1?"Taste":"Rad"} ${index}${value?` um ${value}`:""}.`,"ok");
+});
+$("#bPress").onclick=()=>sendCmd(1,+$("#sKey").value,0);
+$("#bTurnUp").onclick=()=>sendCmd(2,0,1);
+$("#bTurnDn").onclick=()=>sendCmd(2,0,-1);
+
+/* --- 4 RAM --- */
+const parseAddr=s=>{const v=Number(s.trim());if(!Number.isFinite(v))throw new Error("Adresse nicht lesbar");return v>>>0};
+let lastDump=null;
+$("#bRead").onclick=guard(async()=>{
+  const a=parseAddr($("#iAddr").value), n=+$("#iLen").value;
+  const d=await e2.readAll(a,n,(x,y)=>say(`lese ${x}/${y}…`));
+  lastDump=d; $("#bDump").disabled=false;
+  const lines=[];
+  for(let o=0;o<d.length;o+=16){
+    const ch=Array.from(d.subarray(o,o+16));
+    lines.push(`${(a+o).toString(16).padStart(8,"0")}  `+
+      ch.map(x=>x.toString(16).padStart(2,"0")).join(" ").padEnd(47)+"  "+
+      ch.map(x=>x>=32&&x<127?String.fromCharCode(x):".").join(""));
+  }
+  $("#hexview").textContent=lines.join("\n");
+  say(`${d.length} Byte gelesen, CRC-32 0x${crc32(d).toString(16)}.`,"ok");
+});
+$("#bDump").onclick=()=>dl(lastDump,`ram-${$("#iAddr").value}.bin`);
+let wfile=null;
+$("#fWrite").onchange=async e=>{wfile=new Uint8Array(await e.target.files[0].arrayBuffer());$("#bWrite").disabled=false};
+$("#bWrite").onclick=guard(async()=>{
+  const a=parseAddr($("#iAddr").value);
+  if(!confirm(`${wfile.length} Byte an 0x${a.toString(16)} schreiben?`)) return;
+  await e2.writeAll(a,wfile,(x,y)=>say(`schreibe ${x}/${y}…`));
+  say(`${wfile.length} Byte geschrieben.`,"ok");
+});
+
+/* --- 5 Startbild --- */
+let sfile=null;
+$("#fSplash").onchange=async e=>{sfile=new Uint8Array(await e.target.files[0].arrayBuffer());$("#bSplash").disabled=false};
+$("#bSplash").onclick=guard(async()=>{
+  if(sfile.length!==1024 && !confirm(`${sfile.length} Byte statt 1024. Trotzdem schreiben?`)) return;
+  await e2.writeAll(parseAddr($("#iSplash").value),sfile);
+  say("Startbild geschrieben.","ok");
+});
+
+function dl(bytes,name){
+  const u=URL.createObjectURL(new Blob([bytes],{type:"application/octet-stream"}));
+  const a=document.createElement("a");a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);
+}
+</script>
