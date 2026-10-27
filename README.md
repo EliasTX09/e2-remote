@@ -4,7 +4,7 @@ Eine Seite, die über **USB** mit einer Korg Electribe 2 redet: Effekt-Presets l
 und umbenennen, Tasten und Rad fernsteuern, Speicher lesen und schreiben, Startbild
 setzen.
 
-→ **[Seite öffnen](https://BENUTZER.github.io/REPO/)** *(Link nach dem ersten Pages-Build anpassen)*
+→ **[Seite öffnen](https://EliasTX09.github.io/e2-remote/)**
 
 ## Was du brauchst
 
