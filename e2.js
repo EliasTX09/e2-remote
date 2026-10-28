@@ -69,8 +69,9 @@ export const DISPLAY={addr:0xC031B310,size:1024,w:128,h:64};
    tools/sonden/klemme.py). Aufbau: Kopf 0x800, dann 16 Parts zu 0x330, jeder
    48 Byte Parameter und 64 Steps zu 12 Byte. Ein Step belegt acht davon:
    on, gate, velocity, trigger, vier Notenbytes. Die Bytes +8 bis +11 sind frei
-   und halten mit dem Achttakte-Patch on, gate, velocity und trigger der
-   Takte 5 bis 8 - Step 64+N in den freien Bytes von Step N. */
+   und halten mit dem Achttakte-Patch on, gate, velocity und die Note der
+   Takte 5 bis 8 - Step 64+N in den freien Bytes von Step N. Einen eigenen
+   Trigger haben die Takte 5 bis 8 nicht, den erben sie von den Takten 1 bis 4. */
 export const PATTERN={addr:0xC06B279C,size:0x4000,kopf:0x800,part:0x330,
                       params:48,step:12,parts:16,steps:64,frei:8};
 export const LAENGE_OFF=0x25;            // Blockoffset des Laengenfelds, 0..7 = 1..8 Takte
@@ -324,14 +325,14 @@ export class E2 {
       const o=n*PATTERN.step;
       return {on:b[o],gate:b[o+1],velocity:b[o+2],trigger:b[o+3],
               noten:Array.from(b.subarray(o+4,o+8)),
-              spaet:{on:b[o+8],gate:b[o+9],velocity:b[o+10],trigger:b[o+11]}};
+              spaet:{on:b[o+8],gate:b[o+9],velocity:b[o+10],note:b[o+11]}};
     });
   }
   /** Einen Schritt der Takte 5 bis 8 setzen (Step 0 bis 63 = Schritt 64 bis 127). */
-  async writeLateStep(part,step,{on=0,gate=0,velocity=0,trigger=0}={}){
+  async writeLateStep(part,step,{on=0,gate=0,velocity=0,note=0}={}){
     if(step<0||step>=PATTERN.steps) throw new Error(`Step 0 bis ${PATTERN.steps-1}`);
     const a=this.partAddr(part)+step*PATTERN.step+PATTERN.frei;
-    await this.write(a,new Uint8Array([on&0xff,gate&0xff,velocity&0xff,trigger&0xff]));
+    await this.write(a,new Uint8Array([on&0xff,gate&0xff,velocity&0xff,note&0x7f]));
   }
   /** Alle Takte 5 bis 8 eines Parts loeschen. */
   async clearLateBars(part){

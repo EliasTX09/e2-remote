@@ -222,7 +222,7 @@ sie erst, wenn du am Ger&auml;t SOFTWARE UPDATE startest. Diese Seite schreibt <
 import {E2, BUTTONS, ENCODERS, DISPLAY, SPLASH, PTRS, REC, STAGE, PATTERN,
         displayToPixels, splashToPixels, pixelsToSplash, pointersOf, recordOf,
         recName, setRecName, recDevice, recParam, setRecParam,
-        hex, ramToFile, FILE_LIMIT} from "./e2.js?v=8takte";
+        hex, ramToFile, FILE_LIMIT} from "./e2.js?v=8takte-noten";
 
 const $=s=>document.querySelector(s);
 const e2=new E2();
@@ -486,19 +486,21 @@ function rasterZeigen(){
     b.classList.toggle("an",!!(tSteps&&tSteps[n].spaet.on));
   }
 }
-/** Werte, die ein neu eingeschalteter Schritt erbt. */
+/** Werte fuer einen neu eingeschalteten Schritt: wie das Geraet sie selbst vergibt,
+    oder vom gleichen Platz der Takte 1 bis 4, wenn dort etwas steht. */
 function erben(n){
-  if(tSteps[n].on) return tSteps[n];
-  const belegt=tSteps.find(s=>s.on);
-  return belegt||{gate:1,velocity:0x64,trigger:0};
+  const q=tSteps[n].on?tSteps[n]:tSteps.find(s=>s.on);
+  return {gate:q?q.gate:72, velocity:q?q.velocity:96,
+          note:(q&&q.noten[0])?q.noten[0]:61};
 }
 function schrittSchalten(n){
   if(!tSteps) return;
   versuch(async()=>{
     const part=+$("#tPart").value;
     const an=!!tSteps[n].spaet.on;
-    const neu=an?{on:0,gate:0,velocity:0,trigger:0}
-                :{on:1,gate:erben(n).gate,velocity:erben(n).velocity,trigger:erben(n).trigger};
+    const e=erben(n);
+    const neu=an?{on:0,gate:0,velocity:0,note:0}
+                :{on:1,gate:e.gate,velocity:e.velocity,note:e.note};
     await e2.writeLateStep(part,n,neu);
     tSteps[n].spaet=neu;
     rasterZeigen();
@@ -524,7 +526,7 @@ $("#tLaengeSetzen").onclick=()=>versuch(async()=>{
 $("#tLeeren").onclick=()=>versuch(async()=>{
   const part=+$("#tPart").value;
   await e2.clearLateBars(part);
-  if(tSteps) tSteps.forEach(s=>s.spaet={on:0,gate:0,velocity:0,trigger:0});
+  if(tSteps) tSteps.forEach(s=>s.spaet={on:0,gate:0,velocity:0,note:0});
   rasterZeigen();
   sagen(`Part ${part+1}: Takte 5 bis 8 geleert.`);
 });
